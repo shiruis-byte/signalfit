@@ -9,6 +9,8 @@ A brand describes its product; SignalFit searches YouTube, reads what each creat
 - `requirements.txt`, `.streamlit/config.toml`
 - `app_data/<category>/` (optional): prepared examples exported by the Colab notebook (section 11). Unzip `app_data.zip` here.
 
+- `label_sets/<name>/` (optional): permanent comment sets for team labelling (`comments.csv`, `set.json`) and each teammate's finished labels in `labels/*.csv`. Made with "Make this a permanent team set" on the Label comments page, run locally, then pushed. The hosted app reads them on every start, so a restart loses nothing.
+
 ## Secrets (Streamlit Cloud: App settings, Secrets)
 
     YOUTUBE_API_KEY = "..."

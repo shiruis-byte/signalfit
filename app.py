@@ -201,14 +201,67 @@ LABEL_HELP = {
 }
 
 
+# Team sets live in the GitHub repo (app/label_sets/<name>/), so they survive restarts of the hosted app:
+#   comments.csv   the fixed comments to label, in order, with the AI's labels
+#   set.json       title and brief
+#   labels/*.csv   finished labels from each teammate (the CSVs downloaded from this page), read on every start
+LABEL_SETS = Path(__file__).resolve().parent / "label_sets"
+
+
 def _ann_dir(key):
     d = engine.CACHE / "annotations" / key
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def _load_all(key):
-    return {f.stem: json.loads(f.read_text()) for f in sorted(_ann_dir(key).glob("*.json"))}
+def _who(stem):
+    stem = re.sub(r"^labels[-_ ]+", "", stem.lower())
+    return re.sub(r"[^a-z0-9]+", "-", stem).strip("-") or "teammate"
+
+
+def _csv_labels(df):
+    return {str(r.comment_id): [l for l in engine.LABELS if int(getattr(r, f"human_{l}", 0) or 0) == 1] for r in df.itertuples()}
+
+
+def _load_all(key, folder=None):
+    """Everyone's labels: CSVs committed to the repo first, then labels saved on this server (newer, so they win)."""
+    out = {}
+    if folder is not None and (folder / "labels").exists():
+        for f in sorted((folder / "labels").glob("*.csv")):
+            try:
+                out[_who(f.stem)] = _csv_labels(pd.read_csv(f, dtype={"comment_id": str}))
+            except Exception:
+                continue
+    for f in sorted(_ann_dir(key).glob("*.json")):
+        out[f.stem] = {**out.get(f.stem, {}), **json.loads(f.read_text())}
+    return out
+
+
+def _team_sets():
+    sets = {}
+    for f in sorted(LABEL_SETS.glob("*/comments.csv")):
+        try:
+            meta = json.loads((f.parent / "set.json").read_text())
+            c = pd.read_csv(f, dtype={"comment_id": str, "creator_id": str})
+        except Exception:
+            continue
+        c["text"] = c["text"].fillna("")
+        sets[f"Team set: {meta.get('title', f.parent.name)}"] = {"brief": meta.get("brief", {}), "source": "team",
+                                                                  "comments": c, "folder": f.parent}
+    return sets
+
+
+def _save_team_set(res, sample, title):
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "team-set"
+    folder = LABEL_SETS / slug
+    (folder / "labels").mkdir(parents=True, exist_ok=True)
+    cols = ["comment_id", "creator_id", "text"] + [l for l in engine.LABELS if l in sample]
+    sample[cols].to_csv(folder / "comments.csv", index=False)
+    brief = {k: v for k, v in res["brief"].items() if isinstance(v, (str, int, float, bool, list))}
+    (folder / "set.json").write_text(json.dumps({"title": title, "brief": brief, "n": len(sample),
+                                                 "created": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
+    (folder / "labels" / "README.txt").write_text("Put each teammate's labels-<name>.csv here, then push to GitHub.\n")
+    return folder
 
 
 def label_page():
@@ -220,7 +273,7 @@ def label_page():
                 'without seeing the AI\'s answer. SignalFit then compares your labels with the AI (Macro-F1, our target is 0.75) '
                 'and with simple keyword rules, and measures how much two teammates agree (Cohen\'s kappa).</p></div>',
                 unsafe_allow_html=True)
-    sets = {}
+    sets = _team_sets()
     if ss.get("result") is not None:
         sets[f"Current search: {ss.result['brief']['product']}"] = ss.result
     for name, path in examples().items():
@@ -237,8 +290,21 @@ def label_page():
         return
     choice = st.selectbox("Comments from", list(sets))
     res = sets[choice]
-    key = f"{brief_key(res['brief'])}_{res['source']}"
-    sample = engine.annotation_sample(res["comments"])
+    folder = res.get("folder")
+    if folder is not None:
+        key = f"team_{folder.name}"
+        sample = res["comments"].reset_index(drop=True)
+    else:
+        key = f"{brief_key(res['brief'])}_{res['source']}"
+        sample = engine.annotation_sample(res["comments"])
+        with st.expander("Make this a permanent team set (run this on your own computer)"):
+            st.caption("Saves these exact comments into the app folder (label_sets/). Push that folder to GitHub and the hosted "
+                       "site will always show them, even after it restarts. Afterwards, add everyone's label CSVs to "
+                       "label_sets/<name>/labels/ and push again so the Results tab keeps the team's numbers.")
+            title = st.text_input("Name of the set", res["brief"].get("product", "Team set")[:60], key=f"ts_title_{key}")
+            if st.button("Save as team set", key=f"ts_save_{key}"):
+                f = _save_team_set(res, sample, title.strip() or "Team set")
+                st.success(f"Saved {len(sample)} comments to {f}. Now commit and push the label_sets folder.")
     me = re.sub(r"[^a-z0-9]+", "-", ss.user["name"].lower()).strip("-") or "me"
     mine_f = _ann_dir(key) / f"{me}.json"
     mine = json.loads(mine_f.read_text()) if mine_f.exists() else {}
@@ -288,10 +354,10 @@ def label_page():
             mine[cid] = list(picked or [])
             mine_f.write_text(json.dumps(mine))
             ss[idx_key] = min(pos + 1, len(assigned) - 1); st.rerun()
-        st.caption("Your labels save as you go. Download them below to share with your team.")
+        st.caption("Your labels save as you go. When you finish, open the Results tab and click Download my labels (CSV).")
 
     with t_results:
-        everyone = _load_all(key)
+        everyone = _load_all(key, folder)
         if not everyone:
             st.info("Label a few comments first; results appear here as you go.")
         else:
@@ -333,10 +399,12 @@ def label_page():
             if "comment_id" not in df or not all(c in df for c in cols):
                 st.error("That file doesn't have the expected columns (comment_id and human_… for each label).")
             else:
-                who = re.sub(r"[^a-z0-9]+", "-", Path(up.name).stem.lower()).strip("-") or "teammate"
-                labs = {r.comment_id: [l for l in engine.LABELS if int(getattr(r, f"human_{l}", 0) or 0) == 1] for r in df.itertuples()}
+                who = _who(Path(up.name).stem)
+                labs = _csv_labels(df.astype({"comment_id": str}))
+                known = set(sample["comment_id"].astype(str))
+                hit = sum(1 for c in labs if c in known)
                 (_ann_dir(key) / f"{who}.json").write_text(json.dumps(labs))
-                st.success(f"Added {len(labs)} labels as “{who}”. Kappa updates above.")
+                st.success(f"Added {len(labs)} labels as “{who}” ({hit} of them are comments in this set). Results update above.")
 
 
 # ==================================================================

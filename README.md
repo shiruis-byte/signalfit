@@ -8,6 +8,8 @@ A brand describes its product. SignalFit searches YouTube, reads each creator's 
 | --- | --- |
 | **Live app** | https://signalfit-usc.streamlit.app |
 | **Course** | USC Annenberg, COMM 586 Advanced Applied AI, Group 2, Fall 2026 |
+| **Stage** | Final Rehearsal (near-final product: polish and fixes only, no new core features) |
+| **Headline result** | Gemini labels comments with Macro-F1 **0.58** vs **0.35** for keyword rules, on 174 comments our team labelled by hand |
 
 ## The problem
 
@@ -17,17 +19,18 @@ Brands usually pick creators by follower count, but followers only show who will
 
 ---
 
-## ✨ What's new since the Showcase
+## ✨ How SignalFit has changed
 
 We connect YouTube and Gemini to help brands find the right KOLs efficiently, by analysing viewers' comments.
 
-| | At the Showcase | **Now** |
-| --- | --- | --- |
-| **Product** | Colab notebook | **Interactive website** |
-| **KOLs** | 21 hand-picked | **All YouTube KOLs, searched live** |
-| **Categories** | Skincare only | **+ Running, Fitness nutrition, Tech** |
-| **Metrics** | 4 | **5, adding audience loyalty** |
-| **Brand tools** | Ranking only | **Shortlist, outreach email, evaluation** |
+| | Showcase | Intermediate Demo | **Final Rehearsal** |
+| --- | --- | --- | --- |
+| **Product** | Colab notebook | Interactive website | **Same website, polished and stable** |
+| **KOLs** | 21 hand-picked | All YouTube KOLs, searched live | All YouTube KOLs, searched live |
+| **Categories** | Skincare only | + Running, Fitness nutrition, Tech | + Running, Fitness nutrition, Tech |
+| **Metrics** | 4 | 5, adding audience loyalty | 5, adding audience loyalty |
+| **Brand tools** | Ranking only | Shortlist, outreach email, evaluation | Shortlist, outreach email, evaluation |
+| **Evaluation** | Planned | Labelling built into the app | **Done: 6 people, 174 comments, Macro-F1 0.58 vs 0.35, error analysis** |
 
 > [!IMPORTANT]
 > **Showcase feedback:** *"make the metrics more diverse"* → we added **Community** as our **fifth metric**, which measures audience loyalty.
@@ -36,7 +39,7 @@ We connect YouTube and Gemini to help brands find the right KOLs efficiently, by
 | --- | --- | --- |
 | **Comments, not followers.** Followers show reach. Comments show real needs and buying intent. | **Gemini Flash-Lite.** No labelled data to train on, so a prompt with our own 8 labels. Fast, cheap, runs in parallel. | **Streamlit Cloud + GitHub.** Every push goes live. Anyone can use it: [signalfit-usc.streamlit.app](https://signalfit-usc.streamlit.app) |
 
-More detail on every change: [How we iterated](#how-we-iterated) and [Challenges we solved](#challenges-we-solved).
+More detail on every change: [How we iterated](#how-we-iterated) and [Challenges we solved](#challenges-we-solved). Our results and what we still need to fix: [Evaluation](#evaluation) and [Limitations and risks](#limitations-and-risks).
 
 ---
 
@@ -91,7 +94,7 @@ flowchart LR
 | 5. Where the data lives | Search data (creators, videos, comments) is pulled **live from YouTube** for every new search and only cached on the server. |
 | 6. Data that must last | The server's disk is temporary and is wiped when the app restarts or sleeps after a period with no visitors. So everything that must last, such as the evaluation comment set and the team's label CSVs, is committed to GitHub under `label_sets/`; searches are cached on the server only to speed up repeats. |
 
-**Cost:** the hosting is free. Each search uses about 400 of YouTube's 10,000 free daily quota units (about 25 searches a day), and Gemini Flash-Lite is the cheapest model tier. Real use would need a paid YouTube quota.
+**Cost:** the hosting is free. Each search uses about 390 of YouTube's 10,000 free daily quota units (about 25 searches a day), and Gemini Flash-Lite is the cheapest model tier. Real use would need a paid YouTube quota.
 
 ---
 
@@ -134,9 +137,44 @@ Inside each search the app also checks **grounding**: every comment ID an explan
 
 ### Results
 
-To be added once all six teammates have finished labelling.
+All six teammates finished labelling: **174 of the 175 comments** have a human label.
 
-**Cost and scale:** one search uses about 400 of YouTube's 10,000 free daily quota units (about 25 searches a day). Gemini reads at most 40 comments per creator with the cheapest flash-lite model. Repeat searches are served from cache.
+| Measure | Result | Target / reading |
+| --- | --- | --- |
+| **Macro-F1, Gemini** | **0.58** | Target 0.75: not yet met |
+| Macro-F1, keyword baseline | 0.35 | Gemini is clearly better ✓ |
+| Team agreement (mean Cohen's kappa, 15 pairs) | 0.41 | Moderate: people disagree on some labels too |
+| Comments where Gemini's labels exactly match ours | 82 of 174 (47%) | |
+| Comments where Gemini gets at least one label right | 128 of 174 (74%) | |
+| Label-level agreement (174 comments × 8 labels) | 1,255 of 1,392 (90%) | |
+| Search time | about 1–2 min new, under 1 s repeated | Target ≤ 2 min ✓ |
+
+**F1 per label** (sorted by Gemini's score):
+
+| Label | Gemini F1 | Keyword F1 | Reading |
+| --- | --- | --- | --- |
+| Product question | **0.81** | 0.62 | Above target |
+| Personal experience | **0.77** | 0.63 | Above target |
+| Positive reaction | **0.76** | 0.45 | Above target |
+| Price concern | 0.63 | 0.60 | Close to keywords: price words are easy to spot |
+| Complaint | 0.56 | 0.23 | Gemini catches only 10 of the 21 complaints we marked |
+| Creator trust | 0.41 | 0.27 | Gemini catches only 9 of the 30 we marked (recall 0.30) |
+| Spam | 0.38 | 0.00 | Misses bot comments repeated across creators |
+| Purchase intent | 0.31 | 0.00 | Only 6 human examples, so the score is unstable |
+
+### Error analysis: what goes wrong and why
+
+1. **Our own labels are part of the problem.** Each teammate's labels, compared with Gemini on their own, give F1 anywhere from 0.38 to 0.72. Most comments were labelled by one person, so that person's habits decide what counts as "right". On the 20 comments everyone labelled (majority vote), Gemini's F1 is already 0.63.
+2. **Gemini under-uses "creator trust".** We counted thank-yous for useful advice ("Dr Dray is the real deal!") as trust; Gemini mostly calls them positive reactions.
+3. **Questions hidden in long stories are missed.** A comment that tells a long skin history and then asks "which face wash should I use?" is often labelled only as personal experience (15 extra experience labels overall).
+4. **Bot comments look like praise.** "So true, this really resonates with me." appears word for word under 4 different creators. Gemini calls it a positive reaction, and so did some of us. A rule that flags identical text across creators fixes the ranking, but barely moves F1 (0.577 → 0.583), because our labels call these comments positive too.
+
+### Hallucination check (in-class Test B)
+
+- **Does Gemini invent labels?** Some "misses" were Gemini being right: it marked a repeated book ad and a thumbnail-editing sales pitch as spam where some of us had labelled them trust or praise.
+- **Does the app invent evidence?** No. Every reason shown to a brand must cite comment IDs from the data, and the code checks each ID before display.
+
+**Cost and scale:** one search uses about 390 of YouTube's 10,000 free daily quota units (about 25 searches a day) and about 12 Gemini Flash-Lite calls to label 480 comments. Repeat searches are served from cache.
 
 ---
 
@@ -151,6 +189,8 @@ To be added once all six teammates have finished labelling.
 | Budget | Filtered after scoring | Also caps creator size during discovery | Changing the budget used to leave results unchanged |
 | Product | Colab notebook, 21 fixed creators | Deployed website, any product, live discovery | A brand must be able to use it without us |
 | Evaluation | Labelling planned in Colab | Labelling inside the app, split across 6 people | Teammates can label from any browser |
+| Results | No numbers yet | Macro-F1 0.58 vs 0.35 baseline, kappa 0.41, error analysis | We need to know where the AI fails before tuning it |
+| Prompt | Version 1 (8-label codebook) | **In progress:** versions tuned on the errors above, each scored | Fix the weakest labels first |
 
 ### Challenges we solved
 
@@ -158,15 +198,47 @@ To be added once all six teammates have finished labelling.
 
 **2. Building an evaluation set we can trust.** One person's labels are not ground truth, and the hosted app's disk is wiped on every restart. We built labelling into the app: a fixed comment set stored in GitHub, blind labelling, 20 shared comments to measure agreement (kappa), majority vote where people overlap, and label CSVs that are committed to the repo so the results survive restarts.
 
+**3. Finding out that "wrong" was sometimes us.** Our first full result (0.58) was below target. Instead of only rewriting the prompt, we checked the labels themselves: teammates disagree with each other (kappa 0.41), each person's labels match Gemini to a very different degree, and some of Gemini's "errors" were correct spam calls. So our plan fixes the labels first, then the prompt, and tests on comments the prompt has never seen.
+
 ---
 
-## Limitations
+## Limitations and risks
 
-- **People disagree on what a comment means,** so the human labels we grade against are themselves uncertain (see Cohen's kappa). Next: a tighter label guide, then tune the prompt on the errors and test on fresh comments, not the same ones.
-- **Purchase comments are rare,** so "wants to buy" is hard to measure. Next: label more comments across more categories.
-- **Comments stand in for sales.** YouTube does not publish sales or watch-through rates.
-- **Costs are estimated** from subscriber counts, not real creator rates.
-- **English only,** and the free API quota allows about 25 searches a day.
+| Limitation | Why it matters | What we do about it |
+| --- | --- | --- |
+| Labelling accuracy is below target (0.58 vs 0.75) | Rankings for trust- and purchase-driven creators may be off | SignalFit suggests and the marketer decides; every reason shows the real comments behind it |
+| People disagree on what a comment means (kappa 0.41) | The "right answer" we grade against is uncertain | Agree on label rules as a team, double-label comments |
+| All test comments come from one skincare search | The score may not hold for running or tech | Test the final prompt on a new category |
+| Purchase comments are rare (6 in 174) | "Wants to buy" can't be measured reliably | Label more comments across categories |
+| Bot comments repeated across creators count as praise | Inflates some creators' engagement | Flag identical text across creators as spam |
+| Comments stand in for sales | YouTube does not publish sales or watch-through rates | State it clearly to users |
+| Costs are estimated from subscriber counts | Not real creator rates | Label it as an estimate in the app |
+| English only; about 25 searches a day on the free quota | Limits real use | Apply for a higher YouTube quota if the project continues |
+
+## Plan from the Rehearsal to the Final: user testing
+
+Our numbers show how well the AI reads comments. Next, we want to know whether SignalFit actually helps the people it is for, so we will have users outside our team try it, then collect their feedback through a **questionnaire** and **interviews**.
+
+**1. Users try SignalFit.** Each participant uses the live site on their own: they describe a product (or pick a template), run a search, read the results and creator details, and build a shortlist.
+
+**2. Questionnaire (right after trying it).** Short and the same for everyone, so we can compare answers:
+
+| Question | Answer |
+| --- | --- |
+| How easy was SignalFit to use? | 1–5 |
+| How sensible were the recommended creators? | 1–5 |
+| How much do you trust the reasons and the comments shown as evidence? | 1–5 |
+| Would you use SignalFit to choose creators? | Yes / Maybe / No |
+| What was confusing or missing? | Open answer |
+
+**3. Interviews (with some of the participants).** A short conversation to understand the *why* behind their answers:
+
+- How do you (or your company) choose creators today?
+- Which part of the results helped you decide, and which part did you ignore?
+- Was there a recommendation you disagreed with? Why?
+- What would make you trust SignalFit enough to use it at work?
+
+**4. What we do with it.** We fix the biggest problems users find before the Final, and report the questionnaire scores and the main interview themes in the Final Presentation and technical report.
 
 ## Privacy and responsible use
 

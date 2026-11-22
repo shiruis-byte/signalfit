@@ -5,6 +5,7 @@ import html
 import json
 import re
 from pathlib import Path
+from urllib.parse import quote as quote_url
 
 import pandas as pd
 import requests
@@ -450,11 +451,29 @@ def channel_url(cid, row=None):
     return f"https://www.youtube.com/{h}" if h else f"https://www.youtube.com/channel/{cid}"
 
 
+def contact_email(row):
+    e = str(row.get("contact_email", "") or "").strip()
+    return "" if e == "nan" else e
+
+
+def contact_line(cid, row):
+    """The creator's public business email, or a link to where YouTube shows it."""
+    e = contact_email(row)
+    if e:
+        return (f'<div class="sf-ids">Business email: <a href="mailto:{html.escape(e)}">{html.escape(e)}</a> '
+                f'(found in the creator\'s public YouTube description)</div>')
+    about = channel_url(cid, row).rstrip("/") + "/about"
+    return (f'<div class="sf-ids">No public email in the description. '
+            f'<a href="{html.escape(about)}" target="_blank">See contact info on YouTube</a> '
+            f'(sign in and click "View email address").</div>')
+
+
 def shortlist_csv(elig, weights):
     out = pd.DataFrame({
         "rank": range(1, len(elig) + 1), "creator": elig["creator_name"].values,
         "handle": [handle_of(r) for _, r in elig.iterrows()], "channel_id": elig.index,
         "channel_url": [channel_url(c, r) for c, r in elig.iterrows()],
+        "contact_email": [contact_email(r) for _, r in elig.iterrows()],
         "subscribers": elig["subscribers"].astype(int).values, "est_cost_usd": elig["est_cost"].round(0).astype(int).values,
         "match_score": elig["match_score"].values, "points_per_1k_usd": elig["value_per_1k"].round(2).values,
         **{SUBSCORES[k].lower().replace(" & ", "_").replace(" ", "_"): elig[k].round(1).values for k in weights},
@@ -598,6 +617,12 @@ def email_box(ctx, cid, row, where):
         st.text_input("Subject", e.get("subject", ""), key=f"subj_{where}_{cid}")
         st.text_area("Email", e.get("body", ""), height=230, key=f"body_{where}_{cid}",
                      help="Edit freely before sending. Written by Gemini from this creator's audience comments.")
+        to = contact_email(row)
+        if to:
+            subj = st.session_state.get(f"subj_{where}_{cid}", e.get("subject", ""))
+            body = st.session_state.get(f"body_{where}_{cid}", e.get("body", ""))
+            st.markdown(f'<a href="mailto:{html.escape(to)}?subject={quote_url(subj)}&body={quote_url(body)}">Open in my email app</a>',
+                        unsafe_allow_html=True)
     elif key:
         if st.button("Draft an outreach email", key=f"mail_{where}_{cid}"):
             with st.spinner("Gemini is writing"):

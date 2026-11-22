@@ -80,6 +80,25 @@ def _key(*parts):
     return hashlib.md5(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()
 
 
+# Creators often write a business email in their channel or video description,
+# sometimes disguised as "name [at] gmail [dot] com". The YouTube API never returns
+# the private "View email address" field, so this public text is all we can use.
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_AT = re.compile(r"\s*[\[(]\s*at\s*[\])]\s*|\s+at\s+(?=[A-Za-z0-9-]+\s*(?:[\[(]\s*dot\s*[\])]|\.))", re.I)
+_DOT = re.compile(r"\s*[\[(]\s*dot\s*[\])]\s*|\s+dot\s+(?=[A-Za-z]{2,}\b)", re.I)
+
+
+def find_email(text):
+    """First public email in a description, or ''."""
+    text = str(text or "")
+    for t in (text, _DOT.sub(".", _AT.sub("@", text))):
+        for m in _EMAIL.finditer(t):
+            e = m.group(0).strip(".").lower()
+            if not e.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                return e
+    return ""
+
+
 def yt_get(endpoint, api_key, **params):
     f = CACHE / "yt" / f"{endpoint}_{_key(endpoint, params)}.json"
     if f.exists():
@@ -392,6 +411,7 @@ def run_search(brief, yt_key, gem_key, progress=lambda step, msg, frac=None: Non
             th = sn.get("thumbnails", {})
             rows.append({"channel_id": ch["id"], "subscribers": int(s.get("subscriberCount", 0)), "hidden": bool(s.get("hiddenSubscriberCount", False)),
                          "video_count": int(s.get("videoCount", 0)), "country": sn.get("country", ""), "handle": sn.get("customUrl", ""),
+                         "contact_email": find_email(sn.get("description", "")),
                          "thumbnail": (th.get("medium") or th.get("default") or {}).get("url", ""),
                          "uploads": ch["contentDetails"]["relatedPlaylists"]["uploads"]})
     cand = cand.merge(pd.DataFrame(rows), on="channel_id", how="inner")
@@ -423,7 +443,8 @@ def run_search(brief, yt_key, gem_key, progress=lambda step, msg, frac=None: Non
         for v in vd.get("items", []):
             s, st = v["snippet"], v["statistics"]
             videos.append({"video_id": v["id"], "creator_id": row.channel_id, "title": s["title"],
-                           "description": s.get("description", "")[:600], "tags": " ".join(s.get("tags", [])[:15]),
+                           "description": s.get("description", "")[:600], "contact_email": find_email(s.get("description", "")),
+                           "tags": " ".join(s.get("tags", [])[:15]),
                            "published_at": s["publishedAt"], "views": int(st.get("viewCount", 0)),
                            "likes": int(st.get("likeCount", 0)), "comment_count": int(st.get("commentCount", 0))})
             try:
@@ -476,7 +497,11 @@ def run_search(brief, yt_key, gem_key, progress=lambda step, msg, frac=None: Non
     rel = rel_future.result()
     side.shutdown(wait=False)
     creators = picked.rename(columns={"channel_id": "creator_id", "channel_title": "creator_name"}).set_index("creator_id")
-    feat = features(lab, videos_df, creators[["creator_name", "handle", "subscribers", "thumbnail"]], comments_df)
+    # no email in the channel description: fall back to the first one in a recent video's description
+    if "contact_email" in videos_df:
+        from_videos = videos_df[videos_df["contact_email"] != ""].groupby("creator_id")["contact_email"].first()
+        creators["contact_email"] = [e or from_videos.get(c, "") for c, e in creators["contact_email"].items()]
+    feat = features(lab, videos_df, creators[["creator_name", "handle", "subscribers", "thumbnail", "contact_email"]], comments_df)
     feat["content_sim"] = rel.reindex(feat.index).fillna(0) / 100
 
     # 5. explanations for the top picks
@@ -614,7 +639,7 @@ def team_agreement(everyone):
 
 def load_example(folder: Path):
     feat = pd.read_csv(folder / "features.csv", index_col=0)
-    for c in ["thumbnail", "handle"]:
+    for c in ["thumbnail", "handle", "contact_email"]:
         feat[c] = feat[c].fillna("") if c in feat else ""
     meta = json.loads((folder / "brief.json").read_text())
     brief = dict(meta["brief"])

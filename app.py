@@ -37,6 +37,7 @@ from ui import (  # noqa: E402
     brief_key,
     channel_url,
     comment_wall,
+    contact_line,
     email_box,
     examples,
     fact,
@@ -633,6 +634,7 @@ def tab_details(ctx):
             for _, e in engine.evidence(comments, cid).iterrows():
                 st.markdown(quote(e, terms), unsafe_allow_html=True)
         st.markdown("#### Reach out")
+        st.markdown(contact_line(cid, row), unsafe_allow_html=True)
         email_box(ctx, cid, row, "dt")
         if len(videos):
             vv = videos[videos["creator_id"] == cid].sort_values("published_at", ascending=False).head(5)

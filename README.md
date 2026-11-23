@@ -29,7 +29,7 @@ We connect YouTube and Gemini to help brands find the right KOLs efficiently, by
 | **KOLs** | 21 hand-picked | All YouTube KOLs, searched live | All YouTube KOLs, searched live |
 | **Categories** | Skincare only | + Running, Fitness nutrition, Tech | + Running, Fitness nutrition, Tech |
 | **Metrics** | 4 | 5, adding audience loyalty | 5, adding audience loyalty |
-| **Brand tools** | Ranking only | Shortlist, outreach email, evaluation | Shortlist, outreach email, evaluation |
+| **Brand tools** | Ranking only | Shortlist, outreach email, evaluation | **+ creator's public business email, one click to send** |
 | **Evaluation** | Planned | Labelling built into the app | **Done: 6 people, 174 comments, Macro-F1 0.58 vs 0.35, error analysis** |
 
 > [!IMPORTANT]
@@ -104,7 +104,7 @@ flowchart LR
 2. **Describe your product:** product, up to 3 search keywords, target audience, the problem your audience has, budget per creator, and goal (conversion or awareness). Or start from a template (Skincare, Running, Fitness nutrition, Tech).
 3. **Click Find creators.** SignalFit searches YouTube, reads the comments with Gemini and scores each creator. A new search takes about 1–2 minutes; a repeated one loads from cache.
 4. **Read the results.** The top picks come first. Open "How was this score calculated?" to see the five sub-scores, switch the goal or budget under Adjust ranking, and open Creator details to see the real comments behind each reason.
-5. **Act on it.** Add creators to your shortlist (the top 3 are added by default), compare them side by side, download the list as CSV, or draft an outreach email.
+5. **Act on it.** Add creators to your shortlist (the top 3 are added by default), compare them side by side, download the list as CSV, or draft an outreach email. If the creator lists a business email in their YouTube description, SignalFit shows it and opens the draft in your email app; if not, it links to the creator's YouTube contact page.
 
 ---
 
@@ -191,6 +191,7 @@ All six teammates finished labelling: **174 of the 175 comments** have a human l
 | Evaluation | Labelling planned in Colab | Labelling inside the app, split across 6 people | Teammates can label from any browser |
 | Results | No numbers yet | Macro-F1 0.58 vs 0.35 baseline, kappa 0.41, error analysis | We need to know where the AI fails before tuning it |
 | Prompt | Version 1 (8-label codebook) | **In progress:** versions tuned on the errors above, each scored | Fix the weakest labels first |
+| Outreach | Email draft only | + the creator's public business email (from channel or video descriptions) and a link to their contact page | A brand needs to know where to send the email |
 
 ### Challenges we solved
 
@@ -239,6 +240,37 @@ Our numbers show how well the AI reads comments. Next, we want to know whether S
 - What would make you trust SignalFit enough to use it at work?
 
 **4. What we do with it.** We fix the biggest problems users find before the Final, and report the questionnaire scores and the main interview themes in the Final Presentation and technical report.
+
+## 💭 Reflection
+
+### Lessons learned
+
+1. **A low score is not always the AI's fault.** Gemini scored 0.58, below our 0.75 target, but our own team only agreed moderately (kappa 0.41).
+2. **Some of Gemini's "errors" were actually right.** It marked a repeated book ad as spam, while some of us had labelled it as praise.
+3. **Users need more than a ranking.** In user testing, people wanted to know whether a creator's audience fits their target, whether the comments are real, and why the metrics are weighted the way they are.
+4. **AI should support the decision, not make it.** Every reason in SignalFit shows the real comments behind it, and the marketer makes the final call.
+5. **A good model is not enough if it's too slow.** Our first live search took several minutes; with parallel calls, backup models and caching it now takes one to two minutes.
+6. **One person's labels are not ground truth.** We built labelling into the app, with a fixed comment set, blind labelling and shared comments, so we could trust our results.
+7. **A brand must be able to use the tool without us.** That's why we moved from a Colab notebook to a live website.
+
+### What we'd do differently
+
+- Test with real users much earlier, not only with our own labels.
+- Agree on our label rules as a team before labelling, and have more comments labelled by two people.
+- Build the test set from several categories, not just one skincare search.
+- Collect more purchase comments: we only had 6 out of 174.
+- Start evaluating earlier. At the Showcase, our evaluation was still only a plan.
+
+## 🔭 Future work
+
+| Next step | Why |
+| --- | --- |
+| Tune the prompt on the errors we found, and test it on comments it has never seen, including a new category | Reach the 0.75 target without overfitting to our test set |
+| Flag bot comments that repeat word for word across creators as spam | Today they count as praise |
+| Show more about who the audience is | Brands want to check that it matches their target |
+| Explain each metric in simple words, and let brands set their own weights | Users asked why the metrics are weighted this way |
+| Label more comments across more categories | To measure purchase intent reliably |
+| Apply for a higher YouTube quota | The free quota allows only about 25 searches a day |
 
 ## Privacy and responsible use
 
